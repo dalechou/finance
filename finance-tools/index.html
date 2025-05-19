@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>USD/TWD Forex CSV Downloader</title>
+  <title>USD/TWD Forex CSV Downloader (Frankfurter.app)</title>
   <style>
     body { font-family: sans-serif; margin: 2em; }
     button { font-size: 1.2em; padding: 0.5em 1em; }
@@ -10,7 +10,7 @@
   </style>
 </head>
 <body>
-  <h1>USD/TWD Forex Rate CSV Exporter</h1>
+  <h1>USD/TWD Forex Rate CSV Exporter (Frankfurter.app)</h1>
   <p>
     Click the button below to generate a CSV file for:<br>
     <strong>forex.txt</strong> (USD/TWD exchange rate)
@@ -19,7 +19,7 @@
   <div class="status" id="status"></div>
   <script>
     async function fetchForex() {
-      const url = 'https://api.exchangerate.host/latest?base=USD&symbols=TWD';
+      const url = 'https://api.frankfurter.app/latest?from=USD&to=TWD';
       const resp = await fetch(url);
       if (!resp.ok) throw new Error("Network response was not ok");
       return resp.json();
