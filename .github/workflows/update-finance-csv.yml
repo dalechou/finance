@@ -1,0 +1,43 @@
+name: Update finance CSV files
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Runs every day at 2:00 UTC
+  workflow_dispatch:      # Allows manual trigger
+
+jobs:
+  update-csv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch stock prices
+        run: |
+          curl "https://financialmodelingprep.com/api/v3/quote/MSFT,AAPL,NVDA,TSM?apikey=demo" -o stocks.json
+
+      - name: Fetch forex rate
+        run: |
+          curl "https://financialmodelingprep.com/api/v3/fx/USDTWD?apikey=demo" -o forex.json
+
+      - name: Generate tickers.txt
+        run: |
+          echo "symbol,price" > tickers.txt
+          cat stocks.json | jq -r '.[] | "\(.symbol),\(.price)"' >> tickers.txt
+
+      - name: Generate forex.txt
+        run: |
+          echo "pair,rate" > forex.txt
+          cat forex.json | jq -r '.[0] | "USD/TWD,\(.bid)"' >> forex.txt
+
+      - name: Move files to finance-tools/ (or docs/)
+        run: |
+          mkdir -p finance-tools
+          mv tickers.txt forex.txt finance-tools/
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add finance-tools/tickers.txt finance-tools/forex.txt
+          git commit -m "Update finance CSV files [auto]" || echo "No changes to commit"
+          git push
