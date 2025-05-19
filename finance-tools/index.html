@@ -2,49 +2,34 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Finance CSV Exporter</title>
+  <title>USD/TWD Forex CSV Downloader</title>
   <style>
     body { font-family: sans-serif; margin: 2em; }
     button { font-size: 1.2em; padding: 0.5em 1em; }
     .status { margin-top: 1em; color: #555; }
-    pre { background: #f4f4f4; padding: 1em; border-radius: 4px; }
   </style>
 </head>
 <body>
-  <h1>Finance CSV Exporter</h1>
+  <h1>USD/TWD Forex Rate CSV Exporter</h1>
   <p>
-    Click the button below to generate CSV files for:<br>
-    <strong>tickers.txt</strong> (MSFT, AAPL, NVDA, TSM prices)<br>
+    Click the button below to generate a CSV file for:<br>
     <strong>forex.txt</strong> (USD/TWD exchange rate)
   </p>
-  <button id="genBtn">Generate CSV Files</button>
+  <button id="genBtn">Generate forex.txt</button>
   <div class="status" id="status"></div>
-  <pre id="debug" style="display:none"></pre>
   <script>
-    async function fetchStocks() {
-      const url = 'https://financialmodelingprep.com/api/v3/quote/MSFT,AAPL,NVDA,TSM?apikey=demo';
-      const resp = await fetch(url);
-      return resp.json();
-    }
     async function fetchForex() {
-      const url = 'https://financialmodelingprep.com/api/v3/fx/USDTWD?apikey=demo';
+      const url = 'https://api.exchangerate.host/latest?base=USD&symbols=TWD';
       const resp = await fetch(url);
+      if (!resp.ok) throw new Error("Network response was not ok");
       return resp.json();
-    }
-    function makeTickersCSV(data) {
-      let csv = "symbol,price\n";
-      if (!Array.isArray(data)) throw new Error("Stock API did not return an array");
-      data.forEach(stock => {
-        csv += `${stock.symbol},${stock.price}\n`;
-      });
-      return csv;
     }
     function makeForexCSV(data) {
       let csv = "pair,rate\n";
-      if (Array.isArray(data) && data[0] && data[0].ticker && data[0].bid) {
-        csv += `USD/TWD,${data[0].bid}\n`;
+      if (data && data.base === "USD" && data.rates && typeof data.rates.TWD === "number") {
+        csv += `USD/TWD,${data.rates.TWD}\n`;
       } else {
-        throw new Error("Forex API did not return expected data");
+        throw new Error("Unexpected data structure: " + JSON.stringify(data));
       }
       return csv;
     }
@@ -62,28 +47,13 @@
     }
     document.getElementById('genBtn').onclick = async () => {
       const status = document.getElementById('status');
-      const debug = document.getElementById('debug');
       status.textContent = "Fetching data...";
-      debug.style.display = "none";
       try {
-        const [stocks, forex] = await Promise.all([fetchStocks(), fetchForex()]);
-        // Debug output if not arrays
-        if (!Array.isArray(stocks)) {
-          debug.textContent = "Stocks API raw response:\n" + JSON.stringify(stocks, null, 2);
-          debug.style.display = "block";
-          throw new Error("Stock API did not return an array. See debug output below.");
-        }
-        if (!Array.isArray(forex)) {
-          debug.textContent = "Forex API raw response:\n" + JSON.stringify(forex, null, 2);
-          debug.style.display = "block";
-          throw new Error("Forex API did not return an array. See debug output below.");
-        }
-        status.textContent = "Generating CSVs...";
-        const tickersCSV = makeTickersCSV(stocks);
+        const forex = await fetchForex();
+        status.textContent = "Generating CSV...";
         const forexCSV = makeForexCSV(forex);
-        downloadFile("tickers.txt", tickersCSV);
         downloadFile("forex.txt", forexCSV);
-        status.textContent = "Done! Files downloaded.";
+        status.textContent = "Done! File downloaded.";
       } catch (e) {
         status.textContent = "Error: " + e.message;
       }
