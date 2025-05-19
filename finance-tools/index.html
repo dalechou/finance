@@ -7,6 +7,7 @@
     body { font-family: sans-serif; margin: 2em; }
     button { font-size: 1.2em; padding: 0.5em 1em; }
     .status { margin-top: 1em; color: #555; }
+    pre { background: #f4f4f4; padding: 1em; border-radius: 4px; }
   </style>
 </head>
 <body>
@@ -18,6 +19,7 @@
   </p>
   <button id="genBtn">Generate CSV Files</button>
   <div class="status" id="status"></div>
+  <pre id="debug" style="display:none"></pre>
   <script>
     async function fetchStocks() {
       const url = 'https://financialmodelingprep.com/api/v3/quote/MSFT,AAPL,NVDA,TSM?apikey=demo';
@@ -31,6 +33,7 @@
     }
     function makeTickersCSV(data) {
       let csv = "symbol,price\n";
+      if (!Array.isArray(data)) throw new Error("Stock API did not return an array");
       data.forEach(stock => {
         csv += `${stock.symbol},${stock.price}\n`;
       });
@@ -40,6 +43,8 @@
       let csv = "pair,rate\n";
       if (Array.isArray(data) && data[0] && data[0].ticker && data[0].bid) {
         csv += `USD/TWD,${data[0].bid}\n`;
+      } else {
+        throw new Error("Forex API did not return expected data");
       }
       return csv;
     }
@@ -57,9 +62,22 @@
     }
     document.getElementById('genBtn').onclick = async () => {
       const status = document.getElementById('status');
+      const debug = document.getElementById('debug');
       status.textContent = "Fetching data...";
+      debug.style.display = "none";
       try {
         const [stocks, forex] = await Promise.all([fetchStocks(), fetchForex()]);
+        // Debug output if not arrays
+        if (!Array.isArray(stocks)) {
+          debug.textContent = "Stocks API raw response:\n" + JSON.stringify(stocks, null, 2);
+          debug.style.display = "block";
+          throw new Error("Stock API did not return an array. See debug output below.");
+        }
+        if (!Array.isArray(forex)) {
+          debug.textContent = "Forex API raw response:\n" + JSON.stringify(forex, null, 2);
+          debug.style.display = "block";
+          throw new Error("Forex API did not return an array. See debug output below.");
+        }
         status.textContent = "Generating CSVs...";
         const tickersCSV = makeTickersCSV(stocks);
         const forexCSV = makeForexCSV(forex);
