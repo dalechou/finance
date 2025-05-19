@@ -2,36 +2,37 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>USD/TWD Forex CSV Downloader (Frankfurter.app)</title>
+  <title>Stock & Forex CSV Exporter (CORS proxy)</title>
   <style>
     body { font-family: sans-serif; margin: 2em; }
     button { font-size: 1.2em; padding: 0.5em 1em; }
     .status { margin-top: 1em; color: #555; }
+    pre { background: #f4f4f4; padding: 1em; border-radius: 4px; }
   </style>
 </head>
 <body>
-  <h1>USD/TWD Forex Rate CSV Exporter (Frankfurter.app)</h1>
-  <p>
-    Click the button below to generate a CSV file for:<br>
-    <strong>forex.txt</strong> (USD/TWD exchange rate)
-  </p>
-  <button id="genBtn">Generate forex.txt</button>
+  <h1>Stock & Forex CSV Exporter (CORS proxy)</h1>
+  <button id="genBtn">Generate tickers.txt & forex.txt</button>
   <div class="status" id="status"></div>
+  <pre id="debug" style="display:none"></pre>
   <script>
-    async function fetchForex() {
-      const url = 'https://api.frankfurter.app/latest?from=USD&to=TWD';
+    // Helper: fetch and parse Yahoo summary price for a ticker
+    async function fetchYahooPrice(ticker) {
+      const url = `https://corsproxy.io/?https://finance.yahoo.com/quote/${ticker}`;
       const resp = await fetch(url);
-      if (!resp.ok) throw new Error("Network response was not ok");
-      return resp.json();
+      const html = await resp.text();
+      // Parse price from <fin-streamer data-field="regularMarketPrice">
+      const match = html.match(/<fin-streamer[^>]*data-field="regularMarketPrice"[^>]*>([\d.,]+)<\/fin-streamer>/);
+      if (match) return match[1].replace(/,/g, "");
+      throw new Error(`Could not parse price for ${ticker}`);
     }
-    function makeForexCSV(data) {
-      let csv = "pair,rate\n";
-      if (data && data.base === "USD" && data.rates && typeof data.rates.TWD === "number") {
-        csv += `USD/TWD,${data.rates.TWD}\n`;
-      } else {
-        throw new Error("Unexpected data structure: " + JSON.stringify(data));
-      }
-      return csv;
+    async function fetchUsdTwdYahoo() {
+      const url = `https://corsproxy.io/?https://finance.yahoo.com/quote/USDTWD=X`;
+      const resp = await fetch(url);
+      const html = await resp.text();
+      const match = html.match(/<fin-streamer[^>]*data-field="regularMarketPrice"[^>]*>([\d.,]+)<\/fin-streamer>/);
+      if (match) return match[1].replace(/,/g, "");
+      throw new Error("Could not parse USD/TWD rate");
     }
     function downloadFile(filename, content) {
       const blob = new Blob([content], {type: "text/csv"});
@@ -47,15 +48,34 @@
     }
     document.getElementById('genBtn').onclick = async () => {
       const status = document.getElementById('status');
-      status.textContent = "Fetching data...";
+      const debug = document.getElementById('debug');
+      status.textContent = "Fetching data from Yahoo Finance (via CORS proxy)...";
+      debug.style.display = "none";
       try {
-        const forex = await fetchForex();
-        status.textContent = "Generating CSV...";
-        const forexCSV = makeForexCSV(forex);
+        const tickers = ["MSFT", "AAPL", "NVDA", "TSM"];
+        const prices = [];
+        for (const ticker of tickers) {
+          status.textContent = `Fetching ${ticker}...`;
+          const price = await fetchYahooPrice(ticker);
+          prices.push([ticker, price]);
+        }
+        status.textContent = "Fetching USD/TWD forex rate...";
+        const fx = await fetchUsdTwdYahoo();
+
+        // Write tickers.txt
+        let tickersCSV = "symbol,price\n";
+        for (const [t, p] of prices) tickersCSV += `${t},${p}\n`;
+        downloadFile("tickers.txt", tickersCSV);
+
+        // Write forex.txt
+        let forexCSV = "pair,rate\nUSD/TWD," + fx + "\n";
         downloadFile("forex.txt", forexCSV);
-        status.textContent = "Done! File downloaded.";
+
+        status.textContent = "Done! Files downloaded.";
       } catch (e) {
         status.textContent = "Error: " + e.message;
+        debug.textContent = e.stack;
+        debug.style.display = "block";
       }
     };
   </script>
