@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Finance CSV Exporter</title>
+  <style>
+    body { font-family: sans-serif; margin: 2em; }
+    button { font-size: 1.2em; padding: 0.5em 1em; }
+    .status { margin-top: 1em; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>Finance CSV Exporter</h1>
+  <p>
+    Click the button below to generate CSV files for:<br>
+    <strong>tickers.txt</strong> (MSFT, AAPL, NVDA, TSM prices)<br>
+    <strong>forex.txt</strong> (USD/TWD exchange rate)
+  </p>
+  <button id="genBtn">Generate CSV Files</button>
+  <div class="status" id="status"></div>
+  <script>
+    async function fetchStocks() {
+      const url = 'https://financialmodelingprep.com/api/v3/quote/MSFT,AAPL,NVDA,TSM?apikey=demo';
+      const resp = await fetch(url);
+      return resp.json();
+    }
+    async function fetchForex() {
+      const url = 'https://financialmodelingprep.com/api/v3/fx/USDTWD?apikey=demo';
+      const resp = await fetch(url);
+      return resp.json();
+    }
+    function makeTickersCSV(data) {
+      let csv = "symbol,price\n";
+      data.forEach(stock => {
+        csv += `${stock.symbol},${stock.price}\n`;
+      });
+      return csv;
+    }
+    function makeForexCSV(data) {
+      let csv = "pair,rate\n";
+      if (Array.isArray(data) && data[0] && data[0].ticker && data[0].bid) {
+        csv += `USD/TWD,${data[0].bid}\n`;
+      }
+      return csv;
+    }
+    function downloadFile(filename, content) {
+      const blob = new Blob([content], {type: "text/csv"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+      }, 0);
+    }
+    document.getElementById('genBtn').onclick = async () => {
+      const status = document.getElementById('status');
+      status.textContent = "Fetching data...";
+      try {
+        const [stocks, forex] = await Promise.all([fetchStocks(), fetchForex()]);
+        status.textContent = "Generating CSVs...";
+        const tickersCSV = makeTickersCSV(stocks);
+        const forexCSV = makeForexCSV(forex);
+        downloadFile("tickers.txt", tickersCSV);
+        downloadFile("forex.txt", forexCSV);
+        status.textContent = "Done! Files downloaded.";
+      } catch (e) {
+        status.textContent = "Error: " + e.message;
+      }
+    };
+  </script>
+</body>
+</html>
