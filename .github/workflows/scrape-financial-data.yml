@@ -2,7 +2,7 @@ name: Web Scraping Financial Data
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Daily at midnight UTC
+    - cron: '0 0 * * *'  # Daily at midnight UTC
   workflow_dispatch:  # Allows manual trigger
 
 jobs:
@@ -20,10 +20,10 @@ jobs:
       with:
         node-version: '16'  # Use Node.js 16 or later for ES Modules support
 
-    # Step 3: Install dependencies (node-fetch)
+    # Step 3: Install dependencies (node-fetch and luxon)
     - name: Install dependencies
       run: |
-        npm install node-fetch  # Install node-fetch (v3)
+        npm install node-fetch luxon  # Install node-fetch (v3) and luxon
 
     # Step 4: Run the scraper script
     - name: Run the scraper script
@@ -38,7 +38,7 @@ jobs:
         git diff --quiet financial_data.csv || echo "Changes detected in financial_data.csv"
         cat financial_data.csv  # Print the content of the CSV for debugging
 
-    # Step 6: Ensure CSV file is tracked and commit changes if modified
+    # Step 6: Ensure CSV file is tracked and commit changes
     - name: Ensure CSV file is tracked and commit changes
       run: |
         # Check if financial_data.csv exists
