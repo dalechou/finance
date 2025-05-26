@@ -12,12 +12,16 @@ jobs:
   scrape:
     runs-on: ubuntu-latest
 
+    env:
+      ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v2
       with:
         ref: main
         token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
 
     - name: Set up Node.js
       uses: actions/setup-node@v2

@@ -2,23 +2,29 @@ import fetch from 'node-fetch';
 import fs from 'fs';
 import { DateTime } from 'luxon';
 
+// Get Alpha Vantage API key from environment variable
+const ALPHAVANTAGE_API_KEY = process.env.ALPHAVANTAGE_API_KEY;
+
+// Alpha Vantage Forex endpoint (USD/TWD)
 async function getForexRate() {
-  const url = 'https://api.exchangerate-api.com/v4/latest/USD';
+  const url = `https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=USD&to_currency=TWD&apikey=${ALPHAVANTAGE_API_KEY}`;
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`Forex API error: ${response.status}`);
+  if (!response.ok) throw new Error(`Alpha Vantage Forex API error: ${response.status}`);
   const data = await response.json();
-  if (!data.rates || !data.rates.TWD) throw new Error('Missing TWD rate');
-  return data.rates.TWD;
+  const rate = data['Realtime Currency Exchange Rate']?.['5. Exchange Rate'];
+  if (!rate) throw new Error('Missing USD/TWD rate from Alpha Vantage');
+  return parseFloat(rate);
 }
 
+// Alpha Vantage Stock endpoint (GLOBAL_QUOTE)
 async function getStockPrice(symbol) {
-  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
+  const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHAVANTAGE_API_KEY}`;
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`Yahoo Finance API error: ${response.status}`);
+  if (!response.ok) throw new Error(`Alpha Vantage Stock API error: ${response.status}`);
   const data = await response.json();
-  const result = data?.quoteResponse?.result?.[0];
-  if (!result || typeof result.regularMarketPrice !== 'number') throw new Error(`No price for ${symbol}`);
-  return result.regularMarketPrice;
+  const price = data['Global Quote']?.['05. price'];
+  if (!price) throw new Error(`No price for ${symbol} from Alpha Vantage`);
+  return parseFloat(price);
 }
 
 async function saveToCSV() {
@@ -35,8 +41,8 @@ async function saveToCSV() {
   }
 
   const row = `${date},${forexRate},${aaplPrice},${msftPrice},${nvdaPrice},${tsmPrice}`;
-  
-  // Optionally, check last row and only append if changed
+
+  // Only append if the row is different from the last
   const lines = fs.readFileSync('financial_data.csv', 'utf8').trim().split('\n');
   if (lines[lines.length - 1] !== row) {
     fs.appendFileSync('financial_data.csv', row + '\n');
