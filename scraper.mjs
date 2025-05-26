@@ -33,9 +33,16 @@ async function saveToCSV() {
     `${date},${forexRate},${aaplPrice},${msftPrice},${nvdaPrice},${tsmPrice}`
   ];
 
+  // Log the data to be written to the file
+  console.log('Data to write:', data);  // Debug log
+
   // Append data to CSV
-  console.log('Writing to CSV:', data);  // Debug log
-  fs.appendFileSync('financial_data.csv', data.join('\n') + '\n');
+  try {
+    fs.appendFileSync('financial_data.csv', data.join('\n') + '\n');
+    console.log('Data successfully written to CSV.');
+  } catch (err) {
+    console.error('Error writing to CSV:', err);
+  }
 }
 
 saveToCSV().catch(console.error);
