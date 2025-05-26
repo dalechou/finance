@@ -1,17 +1,206 @@
-<html>
-<head></head>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Financial Data CSV Viewer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 2em;
+      background: #f6f8fa;
+    }
+    h1 {
+      color: #333;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-bottom: 2em;
+      background: #fff;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 0.5em 1em;
+      text-align: center;
+    }
+    th {
+      background: #0366d6;
+      color: #fff;
+    }
+    tr:nth-child(even) td {
+      background: #f1f8ff;
+    }
+    #scrape-btn {
+      padding: 0.7em 2em;
+      background: #28a745;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 1em;
+      cursor: pointer;
+      margin-bottom: 1em;
+    }
+    #scrape-btn[disabled] {
+      background: #888;
+      cursor: not-allowed;
+    }
+    #msg {
+      margin-bottom: 1em;
+      color: #d73a49;
+      font-weight: bold;
+    }
+    #success {
+      color: #28a745;
+    }
+  </style>
+</head>
 <body>
-<p>Prints something if it works.</p>
-<script>
-  fetch('financial_data.csv')
-    .then(response => response.text())
-    .then(data => {
-      const rows = data.split('\n');
-      rows.forEach(row => {
-        const cols = row.split(',');
-        console.log(cols);  // This logs the CSV data, you can render it on the page.
+  <h1>Financial Data CSV Viewer</h1>
+  <div id="msg"></div>
+  <button id="scrape-btn">Scrape &amp; Update Data</button>
+  <table id="csv-table">
+    <thead></thead>
+    <tbody></tbody>
+  </table>
+  <script>
+    // --- CONFIGURATION ---
+    // Change these as appropriate for your repo
+    const OWNER = "dalechou";
+    const REPO = "finance";
+    const WORKFLOW_ID = "scrape-financial-data.yml"; // or the actual workflow filename
+    const BRANCH = "main";
+    const CSV_PATH = "financial_data.csv";
+    const GITHUB_TOKEN = null; // If using a token, put here (not recommended for public web)
+    const SCRAPE_LIMIT = 2; // Uses allowed per day
+
+    // --- CSV TABLE RENDERING ---
+    async function fetchCSV() {
+      const url = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${CSV_PATH}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch CSV file.");
+      return await res.text();
+    }
+
+    function parseCSV(text) {
+      const lines = text.trim().split('\n');
+      const [header, ...rows] = lines;
+      const headers = header.split(',');
+      const data = rows.map(row => row.split(','));
+      return { headers, data };
+    }
+
+    function renderTable(headers, data) {
+      const thead = document.querySelector('#csv-table thead');
+      const tbody = document.querySelector('#csv-table tbody');
+      thead.innerHTML = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+      tbody.innerHTML = data.map(row =>
+        '<tr>' + row.map(cell => `<td>${cell}</td>`).join('') + '</tr>'
+      ).join('');
+    }
+
+    // --- SCRAPE BUTTON LOGIC ---
+    function getTodayStr() {
+      const now = new Date();
+      return now.toISOString().slice(0, 10);
+    }
+
+    function getTriggerCount() {
+      const today = getTodayStr();
+      const item = localStorage.getItem('scrape_triggers');
+      if (!item) return 0;
+      try {
+        const obj = JSON.parse(item);
+        if (obj.date === today) return obj.count || 0;
+        return 0;
+      } catch { return 0; }
+    }
+
+    function setTriggerCount(count) {
+      const today = getTodayStr();
+      localStorage.setItem('scrape_triggers', JSON.stringify({ date: today, count }));
+    }
+
+    function incrementTriggerCount() {
+      let count = getTriggerCount();
+      count++;
+      setTriggerCount(count);
+      return count;
+    }
+
+    function canTriggerScrape() {
+      return getTriggerCount() < SCRAPE_LIMIT;
+    }
+
+    // --- GITHUB ACTION TRIGGER ---
+    async function triggerGitHubWorkflow() {
+      // Use GitHub REST API to dispatch workflow
+      const url = `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW_ID}/dispatches`;
+      const payload = {
+        ref: BRANCH
+      };
+      const headers = {
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json'
+      };
+      if (GITHUB_TOKEN) headers['Authorization'] = `token ${GITHUB_TOKEN}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
       });
+      return res.status === 204;
+    }
+
+    // --- UI CONTROL ---
+    const btn = document.getElementById('scrape-btn');
+    const msg = document.getElementById('msg');
+
+    async function updateTable() {
+      try {
+        const csv = await fetchCSV();
+        const { headers, data } = parseCSV(csv);
+        renderTable(headers, data);
+      } catch (e) {
+        msg.textContent = "Failed to load CSV: " + e.message;
+      }
+    }
+
+    function updateButtonState() {
+      if (canTriggerScrape()) {
+        btn.disabled = false;
+        msg.textContent = "";
+      } else {
+        btn.disabled = true;
+        msg.textContent = "Scrape trigger limit reached for today.";
+      }
+    }
+
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      msg.textContent = "";
+      if (!canTriggerScrape()) {
+        msg.textContent = "Scrape trigger limit reached for today.";
+        return;
+      }
+      msg.textContent = "Triggering workflow...";
+      try {
+        const ok = await triggerGitHubWorkflow();
+        if (ok) {
+          msg.innerHTML = "<span id='success'>Workflow triggered! Please wait a few moments for the CSV to update.</span>";
+          incrementTriggerCount();
+          updateButtonState();
+        } else {
+          throw new Error("Failed to trigger workflow (API or permissions error).");
+        }
+      } catch (e) {
+        msg.textContent = "Error: " + e.message;
+      }
+      btn.disabled = false;
     });
-</script>
+
+    // --- INITIALIZE ---
+    updateTable();
+    updateButtonState();
+  </script>
 </body>
 </html>
