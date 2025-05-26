@@ -43,6 +43,7 @@ async function saveToCSV() {
   const nvdaPrice = await getStockPrice('NVDA');
   const tsmPrice = await getStockPrice('TSM');
 
+  // Stop execution if any of the data points are null
   if (forexRate === null || aaplPrice === null || msftPrice === null || nvdaPrice === null || tsmPrice === null) {
     console.error('Error: One or more data points are missing.');
     return;
@@ -55,4 +56,15 @@ async function saveToCSV() {
     .map(row => row.join(','))
     .join('\n');
 
-  // Check if the file is actu
+  // Ensure the file is written successfully
+  try {
+    fs.writeFileSync('financial_data.csv', csvData, 'utf8');
+    console.log('CSV file saved successfully.');
+  } catch (error) {
+    console.error('Error saving CSV file:', error.message);
+    return;
+  }
+}
+
+// Call the function to execute the script
+saveToCSV();
