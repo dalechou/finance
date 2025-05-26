@@ -1,6 +1,6 @@
-const fetch = require('node-fetch');
-const fs = require('fs');
-const { DateTime } = require('luxon');
+import fetch from 'node-fetch';
+import fs from 'fs';
+import { DateTime } from 'luxon';
 
 // Example function to fetch Forex rate
 async function getForexRate() {
