@@ -1,70 +1,41 @@
-import fetch from 'node-fetch';  // Use import for node-fetch (ESM)
-import fs from 'fs';
+const fetch = require('node-fetch');
+const fs = require('fs');
+const { DateTime } = require('luxon');
 
+// Example function to fetch Forex rate
 async function getForexRate() {
-  try {
-    const response = await fetch('https://api.exchangerate.host/convert?from=USD&to=TWD');
-    const data = await response.json();
-    console.log('Forex API Response:', data);
-
-    if (data.info && data.info.rate) {
-      return data.info.rate;
-    } else {
-      throw new Error('Rate data not found in API response');
-    }
-  } catch (error) {
-    console.error('Error fetching forex rate:', error.message);
-    return null;
-  }
+  const url = 'https://api.exchangerate-api.com/v4/latest/USD';
+  const response = await fetch(url);
+  const data = await response.json();
+  console.log('Forex Rate:', data.rates.TWD);  // Debug log
+  return data.rates.TWD;
 }
 
+// Example function to fetch stock price for AAPL
 async function getStockPrice(symbol) {
-  try {
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
-    const response = await fetch(url);
-    const data = await response.json();
-    console.log(`Stock Price API Response for ${symbol}:`, data);
-
-    if (data.quoteResponse && data.quoteResponse.result && data.quoteResponse.result[0]) {
-      return data.quoteResponse.result[0].regularMarketPrice;
-    } else {
-      throw new Error('Stock price data not found');
-    }
-  } catch (error) {
-    console.error(`Error fetching stock price for ${symbol}:`, error.message);
-    return null;
-  }
+  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
+  const response = await fetch(url);
+  const data = await response.json();
+  console.log(`${symbol} Price:`, data.quoteResponse.result[0].regularMarketPrice);  // Debug log
+  return data.quoteResponse.result[0].regularMarketPrice;
 }
 
+// Function to write data to CSV
 async function saveToCSV() {
+  const date = DateTime.now().toISO();
   const forexRate = await getForexRate();
   const aaplPrice = await getStockPrice('AAPL');
   const msftPrice = await getStockPrice('MSFT');
   const nvdaPrice = await getStockPrice('NVDA');
   const tsmPrice = await getStockPrice('TSM');
 
-  // Stop execution if any of the data points are null
-  if (forexRate === null || aaplPrice === null || msftPrice === null || nvdaPrice === null || tsmPrice === null) {
-    console.error('Error: One or more data points are missing.');
-    return;
-  }
+  const data = [
+    `${date},${forexRate},${aaplPrice},${msftPrice},${nvdaPrice},${tsmPrice}`
+  ];
 
-  const csvData = [
-    ['Date', 'USD to TWD', 'AAPL Price', 'MSFT Price', 'NVDA Price', 'TSM Price'],
-    [new Date().toISOString(), forexRate, aaplPrice, msftPrice, nvdaPrice, tsmPrice],
-  ]
-    .map(row => row.join(','))
-    .join('\n');
-
-  // Ensure the file is written successfully
-  try {
-    fs.writeFileSync('financial_data.csv', csvData, 'utf8');
-    console.log('CSV file saved successfully.');
-  } catch (error) {
-    console.error('Error saving CSV file:', error.message);
-    return;
-  }
+  // Append data to CSV
+  console.log('Writing to CSV:', data);  // Debug log
+  fs.appendFileSync('financial_data.csv', data.join('\n') + '\n');
 }
 
-// Call the function to execute the script
-saveToCSV();
+saveToCSV().catch(console.error);

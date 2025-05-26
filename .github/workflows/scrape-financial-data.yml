@@ -30,15 +30,20 @@ jobs:
       run: |
         node scraper.mjs  # Run the .mjs file
 
-    # Step 5: Ensure CSV file is tracked and commit changes
+    # Step 5: Debugging - Check if financial_data.csv was modified
+    - name: Check for changes in CSV file
+      run: |
+        # Check if the file exists and if there are changes
+        git status
+        git diff --quiet financial_data.csv || echo "Changes detected in financial_data.csv"
+        cat financial_data.csv  # Print the content of the CSV for debugging
+
+    # Step 6: Ensure CSV file is tracked and commit changes if modified
     - name: Ensure CSV file is tracked and commit changes
       run: |
         # Check if financial_data.csv exists
         if [ -f financial_data.csv ]; then
           echo "CSV file found. Checking git status."
-          
-          # Check for changes to the CSV file
-          git status
           
           # Add any modified or new files to the commit
           git add financial_data.csv
