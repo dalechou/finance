@@ -1,0 +1,16 @@
+<html>
+<head></head>
+<body>
+<script>
+  fetch('financial_data.csv')
+    .then(response => response.text())
+    .then(data => {
+      const rows = data.split('\n');
+      rows.forEach(row => {
+        const cols = row.split(',');
+        console.log(cols);  // This logs the CSV data, you can render it on the page.
+      });
+    });
+</script>
+</body>
+</html>
