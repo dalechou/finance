@@ -2,8 +2,8 @@ name: Web Scraping Financial Data
 
 on:
   schedule:
-    - cron: '0 0 * * *'
-  workflow_dispatch:
+    - cron: '0 0 * * *'  # Daily at midnight UTC
+  workflow_dispatch:  # Allows manual trigger
 
 permissions:
   contents: write
@@ -50,3 +50,4 @@ jobs:
           fi
         else
           echo "No CSV file to commit."
+        fi
