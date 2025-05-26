@@ -35,11 +35,11 @@ async function saveToCSV() {
   const nvdaPrice = await getStockPrice('NVDA');
   const tsmPrice = await getStockPrice('TSM');
 
-  // Always overwrite with new data (header + latest row)
+  // Always overwrite with new data (header + latest row), in UTF-8
   const header = 'datetime,usd_twd,aapl,msft,nvda,tsm\n';
   const row = `${date},${forexRate},${aaplPrice},${msftPrice},${nvdaPrice},${tsmPrice}\n`;
-  fs.writeFileSync('financial_data.csv', header + row);
-  console.log('Data successfully written (overwritten) to CSV.');
+  fs.writeFileSync('financial_data.csv', header + row, { encoding: 'utf8' });
+  console.log('Data successfully written (overwritten) to CSV in UTF-8 encoding.');
 }
 
 saveToCSV().catch(console.error);
