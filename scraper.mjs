@@ -5,11 +5,14 @@ import { DateTime } from 'luxon';
 // Get Alpha Vantage API key from environment variable
 const ALPHAVANTAGE_API_KEY = process.env.ALPHAVANTAGE_API_KEY;
 
-// Read forex pair from forex.txt (should be e.g. 'usd_twd')
+// Read forex pair from forex.txt (expects, e.g., 'usd_twd')
 function getForexPair() {
   const forexLabel = fs.readFileSync('forex.txt', 'utf8').trim();
-  // Split to get from_currency and to_currency, e.g., 'usd_twd' -> ['usd','twd']
+  // Split to get from_currency and to_currency, e.g., 'usd_twd' -> ['usd', 'twd']
   const [from, to] = forexLabel.toUpperCase().split('_');
+  if (!from || !to) {
+    throw new Error(`Invalid forex pair in forex.txt: "${forexLabel}". Expected format: usd_twd`);
+  }
   return { from, to };
 }
 
@@ -28,7 +31,11 @@ async function getForexRate(from, to) {
   if (!response.ok) throw new Error(`Alpha Vantage Forex API error: ${response.status}`);
   const data = await response.json();
   const rate = data['Realtime Currency Exchange Rate']?.['5. Exchange Rate'];
-  if (!rate) throw new Error(`Missing ${from}/${to} rate from Alpha Vantage`);
+  if (!rate) {
+    // Optionally log the full response for debugging:
+    // console.error('Alpha Vantage response:', JSON.stringify(data, null, 2));
+    throw new Error(`Missing ${from}/${to} rate from Alpha Vantage`);
+  }
   return parseFloat(rate);
 }
 
@@ -39,7 +46,11 @@ async function getStockPrice(symbol) {
   if (!response.ok) throw new Error(`Alpha Vantage Stock API error: ${response.status}`);
   const data = await response.json();
   const price = data['Global Quote']?.['05. price'];
-  if (!price) throw new Error(`No price for ${symbol} from Alpha Vantage`);
+  if (!price) {
+    // Optionally log the full response for debugging:
+    // console.error(`Alpha Vantage response for symbol ${symbol}:`, JSON.stringify(data, null, 2));
+    throw new Error(`No price for ${symbol} from Alpha Vantage`);
+  }
   return parseFloat(price);
 }
 
