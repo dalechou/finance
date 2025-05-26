@@ -2,3 +2,4 @@ AAPL
 MSFT
 NVDA
 TSM
+f
