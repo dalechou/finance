@@ -35,21 +35,11 @@ async function saveToCSV() {
   const nvdaPrice = await getStockPrice('NVDA');
   const tsmPrice = await getStockPrice('TSM');
 
-  // Write header if file does not exist
-  if (!fs.existsSync('financial_data.csv')) {
-    fs.writeFileSync('financial_data.csv', 'datetime,usd_twd,aapl,msft,nvda,tsm\n');
-  }
-
-  const row = `${date},${forexRate},${aaplPrice},${msftPrice},${nvdaPrice},${tsmPrice}`;
-
-  // Only append if the row is different from the last
-  const lines = fs.readFileSync('financial_data.csv', 'utf8').trim().split('\n');
-  if (lines[lines.length - 1] !== row) {
-    fs.appendFileSync('financial_data.csv', row + '\n');
-    console.log('Data successfully written to CSV.');
-  } else {
-    console.log('No data change detected, not appending.');
-  }
+  // Always overwrite with new data (header + latest row)
+  const header = 'datetime,usd_twd,aapl,msft,nvda,tsm\n';
+  const row = `${date},${forexRate},${aaplPrice},${msftPrice},${nvdaPrice},${tsmPrice}\n`;
+  fs.writeFileSync('financial_data.csv', header + row);
+  console.log('Data successfully written (overwritten) to CSV.');
 }
 
 saveToCSV().catch(console.error);
