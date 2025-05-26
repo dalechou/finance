@@ -2,57 +2,47 @@ name: Web Scraping Financial Data
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Daily at midnight UTC
-  workflow_dispatch:  # Allows manual trigger
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
 
     steps:
-    # Step 1: Checkout repository
     - name: Checkout repository
       uses: actions/checkout@v2
+      with:
+        ref: main
+        token: ${{ secrets.GITHUB_TOKEN }}
 
-    # Step 2: Set up Node.js
     - name: Set up Node.js
       uses: actions/setup-node@v2
       with:
-        node-version: '16'  # Use Node.js 16 or later for ES Modules support
+        node-version: '16'
 
-    # Step 3: Install dependencies (node-fetch and luxon)
     - name: Install dependencies
-      run: |
-        npm install node-fetch luxon  # Install node-fetch (v3) and luxon
+      run: npm install node-fetch luxon
 
-    # Step 4: Run the scraper script
     - name: Run the scraper script
-      run: |
-        node scraper.mjs  # Run the .mjs file
+      run: node scraper.mjs
 
-    # Step 5: Debugging - Check if financial_data.csv was modified
     - name: Check for changes in CSV file
       run: |
-        # Check if the file exists and if there are changes
         git status
         git diff --quiet financial_data.csv || echo "Changes detected in financial_data.csv"
-        cat financial_data.csv  # Print the content of the CSV for debugging
+        cat financial_data.csv
 
-    # Step 6: Ensure CSV file is tracked and commit changes
     - name: Ensure CSV file is tracked and commit changes
       run: |
-        # Check if financial_data.csv exists
         if [ -f financial_data.csv ]; then
-          echo "CSV file found. Checking git status."
-          
-          # Add any modified or new files to the commit
           git add financial_data.csv
-          
-          # Check if there are any changes to commit
           if ! git diff --cached --exit-code; then
-            echo "Changes detected, committing and pushing."
-            git config --global user.name "GitHub Actions"
-            git config --global user.email "actions@github.com"
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
             git commit -m "Update financial data CSV"
             git push
           else
@@ -60,4 +50,3 @@ jobs:
           fi
         else
           echo "No CSV file to commit."
-        fi
