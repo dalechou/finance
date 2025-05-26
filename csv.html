@@ -33,7 +33,7 @@
   </style>
 </head>
 <body>
-  <h1>Financial Data CSV Viewer</h1>
+  <h1>Financial data CSV viewer</h1>
   <table id="csv-table">
     <thead></thead>
     <tbody></tbody>
@@ -80,14 +80,34 @@
       return { headers, data };
     }
 
-    function renderTable(headers, data) {
+    // Utility to transpose a 2D array
+    function transpose(matrix) {
+      return matrix[0].map((_, colIndex) => matrix.map(row => row[colIndex]));
+    }
+
+    // Render table with transposed orientation
+    function renderTransposedTable(headers, data) {
       const thead = document.querySelector('#csv-table thead');
       const tbody = document.querySelector('#csv-table tbody');
-      thead.innerHTML = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
-      tbody.innerHTML = data.map(row => {
-        // Format the first column (datetime)
-        if (row.length > 0) row[0] = formatUTCDate(row[0]);
-        return '<tr>' + row.map(cell => `<td>${cell}</td>`).join('') + '</tr>';
+
+      // Combine headers and data for transposing
+      const matrix = [headers, ...data];
+
+      // Transpose the matrix
+      const tData = transpose(matrix);
+
+      // First row will be the new headers (first column in original)
+      thead.innerHTML = '<tr>' + tData[0].map(h => `<th>${h}</th>`).join('') + '</tr>';
+
+      // Each following row is a field: label and its values
+      tbody.innerHTML = tData.slice(1).map(row => {
+        // Optionally format first column if it's a date field label
+        const formattedRow = row.slice();
+        // If the header was "datetime", format the value
+        if (tData[0][0] === "datetime" && row[0] !== "datetime") {
+          formattedRow[0] = formatUTCDate(row[0]);
+        }
+        return '<tr>' + formattedRow.map(cell => `<td>${cell}</td>`).join('') + '</tr>';
       }).join('');
     }
 
@@ -95,7 +115,7 @@
       try {
         const csv = await fetchCSV();
         const { headers, data } = parseCSV(csv);
-        renderTable(headers, data);
+        renderTransposedTable(headers, data);
       } catch (e) {
         document.querySelector('#csv-table').outerHTML =
           `<div style="color: #d73a49; font-weight: bold;">Failed to load CSV: ${e.message}</div>`;
