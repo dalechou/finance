@@ -30,50 +30,41 @@
     tr:nth-child(even) td {
       background: #f1f8ff;
     }
-    #scrape-btn {
-      padding: 0.7em 2em;
-      background: #28a745;
-      color: #fff;
-      border: none;
-      border-radius: 4px;
-      font-size: 1em;
-      cursor: pointer;
-      margin-bottom: 1em;
-    }
-    #scrape-btn[disabled] {
-      background: #888;
-      cursor: not-allowed;
-    }
-    #msg {
-      margin-bottom: 1em;
-      color: #d73a49;
-      font-weight: bold;
-    }
-    #success {
-      color: #28a745;
-    }
   </style>
 </head>
 <body>
   <h1>Financial Data CSV Viewer</h1>
-  <div id="msg"></div>
-  <button id="scrape-btn">Scrape &amp; Update Data</button>
   <table id="csv-table">
     <thead></thead>
     <tbody></tbody>
   </table>
   <script>
-    // --- CONFIGURATION ---
-    // Change these as appropriate for your repo
+    // CONFIGURATION
     const OWNER = "dalechou";
     const REPO = "finance";
-    const WORKFLOW_ID = "scrape-financial-data.yml"; // or the actual workflow filename
     const BRANCH = "main";
     const CSV_PATH = "financial_data.csv";
-    const GITHUB_TOKEN = null; // If using a token, put here (not recommended for public web)
-    const SCRAPE_LIMIT = 2; // Uses allowed per day
 
-    // --- CSV TABLE RENDERING ---
+    // Helper to format ISO date string to 'YYYY-MM-DD HH:MM UTC'
+    function formatUTCDate(isoString) {
+      const d = new Date(isoString);
+      if (isNaN(d)) return isoString;
+      const pad = n => n.toString().padStart(2, '0');
+      // Format: YYYY-MM-DD HH:MM UTC
+      return [
+        d.getUTCFullYear(),
+        '-',
+        pad(d.getUTCMonth() + 1),
+        '-',
+        pad(d.getUTCDate()),
+        ' ',
+        pad(d.getUTCHours()),
+        ':',
+        pad(d.getUTCMinutes()),
+        ' UTC'
+      ].join('');
+    }
+
     async function fetchCSV() {
       const url = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/${CSV_PATH}`;
       const res = await fetch(url);
@@ -83,9 +74,9 @@
 
     function parseCSV(text) {
       const lines = text.trim().split('\n');
-      const [header, ...rows] = lines;
-      const headers = header.split(',');
-      const data = rows.map(row => row.split(','));
+      if (lines.length === 0) return { headers: [], data: [] };
+      const headers = lines[0].split(',');
+      const data = lines.slice(1).map(row => row.split(','));
       return { headers, data };
     }
 
@@ -93,67 +84,12 @@
       const thead = document.querySelector('#csv-table thead');
       const tbody = document.querySelector('#csv-table tbody');
       thead.innerHTML = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
-      tbody.innerHTML = data.map(row =>
-        '<tr>' + row.map(cell => `<td>${cell}</td>`).join('') + '</tr>'
-      ).join('');
+      tbody.innerHTML = data.map(row => {
+        // Format the first column (datetime)
+        if (row.length > 0) row[0] = formatUTCDate(row[0]);
+        return '<tr>' + row.map(cell => `<td>${cell}</td>`).join('') + '</tr>';
+      }).join('');
     }
-
-    // --- SCRAPE BUTTON LOGIC ---
-    function getTodayStr() {
-      const now = new Date();
-      return now.toISOString().slice(0, 10);
-    }
-
-    function getTriggerCount() {
-      const today = getTodayStr();
-      const item = localStorage.getItem('scrape_triggers');
-      if (!item) return 0;
-      try {
-        const obj = JSON.parse(item);
-        if (obj.date === today) return obj.count || 0;
-        return 0;
-      } catch { return 0; }
-    }
-
-    function setTriggerCount(count) {
-      const today = getTodayStr();
-      localStorage.setItem('scrape_triggers', JSON.stringify({ date: today, count }));
-    }
-
-    function incrementTriggerCount() {
-      let count = getTriggerCount();
-      count++;
-      setTriggerCount(count);
-      return count;
-    }
-
-    function canTriggerScrape() {
-      return getTriggerCount() < SCRAPE_LIMIT;
-    }
-
-    // --- GITHUB ACTION TRIGGER ---
-    async function triggerGitHubWorkflow() {
-      // Use GitHub REST API to dispatch workflow
-      const url = `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW_ID}/dispatches`;
-      const payload = {
-        ref: BRANCH
-      };
-      const headers = {
-        'Accept': 'application/vnd.github+json',
-        'Content-Type': 'application/json'
-      };
-      if (GITHUB_TOKEN) headers['Authorization'] = `token ${GITHUB_TOKEN}`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
-      return res.status === 204;
-    }
-
-    // --- UI CONTROL ---
-    const btn = document.getElementById('scrape-btn');
-    const msg = document.getElementById('msg');
 
     async function updateTable() {
       try {
@@ -161,46 +97,12 @@
         const { headers, data } = parseCSV(csv);
         renderTable(headers, data);
       } catch (e) {
-        msg.textContent = "Failed to load CSV: " + e.message;
+        document.querySelector('#csv-table').outerHTML =
+          `<div style="color: #d73a49; font-weight: bold;">Failed to load CSV: ${e.message}</div>`;
       }
     }
 
-    function updateButtonState() {
-      if (canTriggerScrape()) {
-        btn.disabled = false;
-        msg.textContent = "";
-      } else {
-        btn.disabled = true;
-        msg.textContent = "Scrape trigger limit reached for today.";
-      }
-    }
-
-    btn.addEventListener('click', async () => {
-      btn.disabled = true;
-      msg.textContent = "";
-      if (!canTriggerScrape()) {
-        msg.textContent = "Scrape trigger limit reached for today.";
-        return;
-      }
-      msg.textContent = "Triggering workflow...";
-      try {
-        const ok = await triggerGitHubWorkflow();
-        if (ok) {
-          msg.innerHTML = "<span id='success'>Workflow triggered! Please wait a few moments for the CSV to update.</span>";
-          incrementTriggerCount();
-          updateButtonState();
-        } else {
-          throw new Error("Failed to trigger workflow (API or permissions error).");
-        }
-      } catch (e) {
-        msg.textContent = "Error: " + e.message;
-      }
-      btn.disabled = false;
-    });
-
-    // --- INITIALIZE ---
     updateTable();
-    updateButtonState();
   </script>
 </body>
 </html>
