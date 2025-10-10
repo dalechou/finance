@@ -2,3 +2,4 @@ aapl
 msft
 nvda
 tsm
+amd
