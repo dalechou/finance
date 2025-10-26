@@ -1,5 +1,7 @@
 aapl
+amd
+axp
+bac
 msft
 nvda
 tsm
-amd
