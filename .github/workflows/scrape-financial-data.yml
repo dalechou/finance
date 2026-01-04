@@ -12,21 +12,22 @@ jobs:
   scrape:
     runs-on: ubuntu-latest
 
-    env:
-      ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+    # No ALPHAVANTAGE_API_KEY needed for the Yahoo-only scraper
+    env: {}
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
       with:
         ref: main
         token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0
 
     - name: Set up Node.js
-      uses: actions/setup-node@v2
+      uses: actions/setup-node@v3
       with:
-        node-version: '16'
+        node-version: '18'
+        cache: 'npm'
 
     - name: Install dependencies
       run: npm install node-fetch luxon
