@@ -3,7 +3,9 @@ import fs from 'fs';
 import { DateTime } from 'luxon';
 
 /**
- * This script uses Marketstack API for forex rates and intraday stock quotes.
+ * This script uses Alpha Vantage API for both:
+ *  - forex rates (FX_DAILY endpoint)
+ *  - stock quotes (GLOBAL_QUOTE endpoint)
  *
  * Input files:
  *  - forex.txt: lines like "usd_twd", "eur_usd" (from_to)
@@ -13,13 +15,15 @@ import { DateTime } from 'luxon';
  *  - financial_data.csv (overwritten) with header: datetime, <forex pairs...>, <tickers...>
  *
  * Requires:
- *  - MARKETSTACK_API_KEY environment variable (set as GitHub secret)
+ *  - ALPHA_VANTAGE_API_KEY environment variable (set as GitHub secret)
  */
 
-const API_KEY = process.env.MARKETSTACK_API_KEY;
+const API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 if (!API_KEY) {
-  throw new Error('MARKETSTACK_API_KEY environment variable is not set');
+  throw new Error('ALPHA_VANTAGE_API_KEY environment variable is not set');
 }
+
+const BASE_URL = 'https://www.alphavantage.co/query';
 
 /* Read forex pairs from forex.txt (format: "usd_twd" per line) */
 function getForexPairs() {
@@ -35,110 +39,84 @@ function getTickers() {
   return fs
     .readFileSync('ticker.txt', 'utf8')
     .split('\n')
-    .map(line => line.trim())
+    .map(line => line.trim().toUpperCase())
     .filter(line => line.length > 0);
 }
 
-/* Convert forex pair "usd_twd" -> Marketstack symbol "USDTWD" */
-function forexPairToMarketstackSymbol(pair) {
-  const [from, to] = pair.toUpperCase().split('_');
-  return `${from}${to}`;
+/* Convert forex pair "usd_twd" -> from/to currencies "USD"/"TWD" */
+function parseForexPair(pair) {
+  const parts = pair.toUpperCase().split('_');
+  return { from: parts[0], to: parts[1] };
 }
 
 /*
- * Fetch forex rates from Marketstack API
- * Returns a map: symbol -> exchange rate
+ * Fetch forex rate using Alpha Vantage CURRENCY_EXCHANGE_RATE
+ * Returns the exchange rate (from -> to)
  */
-async function fetchMarketstackForex(symbols) {
-  const result = {};
-  if (!symbols || symbols.length === 0) return result;
-
+async function fetchForexRate(fromCurrency, toCurrency) {
+  const url = `${BASE_URL}?function=CURRENCY_EXCHANGE_RATE&from_currency=${fromCurrency}&to_currency=${toCurrency}&apikey=${API_KEY}`;
+  
   try {
-    for (const symbol of symbols) {
-      const url = `http://api.marketstack.com/v1/eod?symbols=${symbol}&access_key=${API_KEY}`;
-      const res = await fetch(url);
-      
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`Marketstack API error for ${symbol}: ${res.status} ${res.statusText} - ${text}`);
-      }
-
-      const data = await res.json();
-      
-      if (data.error) {
-        console.error(`Marketstack API returned error for ${symbol}:`, data.error);
-        throw new Error(`Marketstack API error: ${data.error.code} - ${data.error.message}`);
-      }
-
-      if (data.data && data.data.length > 0) {
-        // Use the close price from the latest data point
-        const quote = data.data[0];
-        result[symbol] = Number(quote.close) || null;
-      } else {
-        console.error(`No data returned from Marketstack for ${symbol}`);
-      }
-    }
-  } catch (err) {
-    console.error('Error fetching from Marketstack:', err);
-    throw err;
-  }
-
-  return result;
-}
-
-/*
- * Fetch intraday stock quotes from Marketstack API
- * Returns a map: symbol -> price
- */
-async function fetchMarketstackQuotes(symbols) {
-  const result = {};
-  if (!symbols || symbols.length === 0) return result;
-
-  try {
-    // Marketstack allows multiple symbols separated by comma
-    const symbolList = symbols.join(',');
-    const url = `http://api.marketstack.com/v1/intraday?symbols=${symbolList}&access_key=${API_KEY}`;
-    
     const res = await fetch(url);
-    
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Marketstack API error: ${res.status} ${res.statusText} - ${text}`);
+      throw new Error(`HTTP error! status: ${res.status}`);
     }
-
+    
     const data = await res.json();
     
-    if (data.error) {
-      console.error('Marketstack API returned error:', data.error);
-      throw new Error(`Marketstack API error: ${data.error.code} - ${data.error.message}`);
+    if (data['Error Message']) {
+      throw new Error(`Alpha Vantage error: ${data['Error Message']}`);
     }
-
-    if (data.data && data.data.length > 0) {
-      // Map symbols to their latest price
-      for (const quote of data.data) {
-        if (quote && quote.symbol) {
-          // Use last price, fallback to close price
-          const price = quote.last ?? quote.close ?? null;
-          if (price != null) {
-            result[quote.symbol.toUpperCase()] = Number(price);
-          }
-        }
-      }
+    
+    if (!data['Realtime Currency Exchange Rate']) {
+      throw new Error(`No exchange rate data returned for ${fromCurrency}/${toCurrency}`);
     }
-
-    // Log any requested symbols that weren't returned
-    const returnedSymbols = new Set((data.data || []).map(d => (d.symbol || '').toUpperCase()));
-    for (const s of symbols) {
-      if (!returnedSymbols.has(s.toUpperCase())) {
-        console.warn(`Marketstack did not return data for requested symbol: ${s}`);
-      }
+    
+    const rate = parseFloat(data['Realtime Currency Exchange Rate']['5. Exchange Rate']);
+    if (isNaN(rate)) {
+      throw new Error(`Invalid exchange rate value for ${fromCurrency}/${toCurrency}`);
     }
+    
+    return rate;
   } catch (err) {
-    console.error('Error fetching quotes from Marketstack:', err);
+    console.error(`Failed to fetch forex rate ${fromCurrency}/${toCurrency}:`, err.message);
     throw err;
   }
+}
 
-  return result;
+/*
+ * Fetch stock quote using Alpha Vantage GLOBAL_QUOTE
+ * Returns the price
+ */
+async function fetchStockQuote(symbol) {
+  const url = `${BASE_URL}?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${API_KEY}`;
+  
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    
+    const data = await res.json();
+    
+    if (data['Error Message']) {
+      throw new Error(`Alpha Vantage error: ${data['Error Message']}`);
+    }
+    
+    if (!data['Global Quote'] || !data['Global Quote']['05. price']) {
+      throw new Error(`No quote data returned for ${symbol}`);
+    }
+    
+    const price = parseFloat(data['Global Quote']['05. price']);
+    if (isNaN(price) || price === 0) {
+      throw new Error(`Invalid price value for ${symbol}`);
+    }
+    
+    return price;
+  } catch (err) {
+    console.error(`Failed to fetch stock quote for ${symbol}:`, err.message);
+    throw err;
+  }
 }
 
 /* Main: collect forex and ticker prices and write CSV */
@@ -152,37 +130,33 @@ async function saveToCSV() {
   console.log('Fetching tickers:', tickers);
 
   // Fetch forex rates
-  const forexSymbols = forexPairs.map(forexPairToMarketstackSymbol);
-  let forexRates;
+  const forexRates = [];
   try {
-    const forexMap = await fetchMarketstackForex(forexSymbols);
-    forexRates = forexPairs.map(pair => {
-      const sym = forexPairToMarketstackSymbol(pair);
-      const val = forexMap[sym];
-      if (val === undefined || val === null) {
-        throw new Error(`Missing forex rate for ${pair} (symbol ${sym})`);
-      }
-      return val;
-    });
+    for (const pair of forexPairs) {
+      const { from, to } = parseForexPair(pair);
+      console.log(`Fetching forex rate: ${from} -> ${to}`);
+      const rate = await fetchForexRate(from, to);
+      forexRates.push(rate);
+      // Alpha Vantage has rate limits, add small delay between requests
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
   } catch (err) {
-    console.error('Failed to fetch forex rates from Marketstack:', err);
+    console.error('Failed to fetch forex rates:', err);
     throw err;
   }
 
   // Fetch ticker prices
-  let tickerPrices;
+  const tickerPrices = [];
   try {
-    const quotesMap = await fetchMarketstackQuotes(tickers);
-    tickerPrices = tickers.map(t => {
-      const lookup = t.toUpperCase();
-      const price = quotesMap[lookup];
-      if (price === undefined || price === null) {
-        throw new Error(`Missing price for ticker ${t}`);
-      }
-      return price;
-    });
+    for (const ticker of tickers) {
+      console.log(`Fetching stock quote: ${ticker}`);
+      const price = await fetchStockQuote(ticker);
+      tickerPrices.push(price);
+      // Alpha Vantage has rate limits, add small delay between requests
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
   } catch (err) {
-    console.error('Failed to fetch ticker prices from Marketstack:', err);
+    console.error('Failed to fetch ticker prices:', err);
     throw err;
   }
 
