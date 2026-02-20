@@ -1,0 +1,42 @@
+name: Scrape Financial Data
+
+on:
+  schedule:
+    # Run at 9:30 AM UTC (NYSE opens) - weekdays only
+    - cron: '30 9 * * 1-5'
+    # Run at 4:00 PM UTC (NYSE closes) - weekdays only
+    - cron: '0 16 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install node-fetch luxon
+
+      - name: Run scraper
+        env:
+          MARKETSTACK_API_KEY: ${{ secrets.MARKETSTACK_API_KEY }}
+        run: node scraper.mjs
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add financial_data.csv
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update financial data - $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            git push
+          fi
