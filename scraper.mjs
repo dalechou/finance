@@ -4,7 +4,7 @@ import { DateTime } from 'luxon';
 
 /**
  * This script uses Alpha Vantage API for both:
- *  - forex rates (FX_DAILY endpoint)
+ *  - forex rates (CURRENCY_EXCHANGE_RATE endpoint)
  *  - stock quotes (GLOBAL_QUOTE endpoint)
  *
  * Input files:
@@ -77,6 +77,7 @@ async function fetchForexRate(fromCurrency, toCurrency) {
       throw new Error(`Invalid exchange rate value for ${fromCurrency}/${toCurrency}`);
     }
     
+    console.log(`  ${fromCurrency}/${toCurrency}: ${rate}`);
     return rate;
   } catch (err) {
     console.error(`Failed to fetch forex rate ${fromCurrency}/${toCurrency}:`, err.message);
@@ -99,20 +100,33 @@ async function fetchStockQuote(symbol) {
     
     const data = await res.json();
     
+    // Log full response for debugging
+    console.log(`  Raw response for ${symbol}:`, JSON.stringify(data));
+    
     if (data['Error Message']) {
       throw new Error(`Alpha Vantage error: ${data['Error Message']}`);
     }
     
-    if (!data['Global Quote'] || !data['Global Quote']['05. price']) {
-      throw new Error(`No quote data returned for ${symbol}`);
+    if (data['Note']) {
+      throw new Error(`Alpha Vantage rate limit: ${data['Note']}`);
     }
     
-    const price = parseFloat(data['Global Quote']['05. price']);
-    if (isNaN(price) || price === 0) {
-      throw new Error(`Invalid price value for ${symbol}`);
+    if (!data['Global Quote']) {
+      throw new Error(`No Global Quote object in response for ${symbol}`);
     }
     
-    return price;
+    const price = data['Global Quote']['05. price'];
+    if (!price || price === '') {
+      throw new Error(`No price data in Global Quote for ${symbol}`);
+    }
+    
+    const priceNum = parseFloat(price);
+    if (isNaN(priceNum) || priceNum === 0) {
+      throw new Error(`Invalid price value for ${symbol}: ${price}`);
+    }
+    
+    console.log(`  ${symbol}: ${priceNum}`);
+    return priceNum;
   } catch (err) {
     console.error(`Failed to fetch stock quote for ${symbol}:`, err.message);
     throw err;
@@ -138,7 +152,7 @@ async function saveToCSV() {
       const rate = await fetchForexRate(from, to);
       forexRates.push(rate);
       // Alpha Vantage has rate limits, add small delay between requests
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   } catch (err) {
     console.error('Failed to fetch forex rates:', err);
@@ -153,7 +167,7 @@ async function saveToCSV() {
       const price = await fetchStockQuote(ticker);
       tickerPrices.push(price);
       // Alpha Vantage has rate limits, add small delay between requests
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   } catch (err) {
     console.error('Failed to fetch ticker prices:', err);
