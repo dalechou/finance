@@ -3,9 +3,7 @@ import fs from 'fs';
 import { DateTime } from 'luxon';
 
 /**
- * This script uses Yahoo Finance's public JSON endpoint for both:
- *  - forex rates (symbols like USDTWD=X)
- *  - stock/ETF/other quotes (symbols like AAPL, BRK-B, etc.)
+ * This script uses Marketstack API for forex rates and intraday stock quotes.
  *
  * Input files:
  *  - forex.txt: lines like "usd_twd", "eur_usd" (from_to)
@@ -14,8 +12,14 @@ import { DateTime } from 'luxon';
  * Output:
  *  - financial_data.csv (overwritten) with header: datetime, <forex pairs...>, <tickers...>
  *
- * No API key required.
+ * Requires:
+ *  - MARKETSTACK_API_KEY environment variable (set as GitHub secret)
  */
+
+const API_KEY = process.env.MARKETSTACK_API_KEY;
+if (!API_KEY) {
+  throw new Error('MARKETSTACK_API_KEY environment variable is not set');
+}
 
 /* Read forex pairs from forex.txt (format: "usd_twd" per line) */
 function getForexPairs() {
@@ -35,54 +39,103 @@ function getTickers() {
     .filter(line => line.length > 0);
 }
 
-/* Convert forex pair "usd_twd" -> Yahoo symbol "USDTWD=X" */
-function forexPairToYahooSymbol(pair) {
+/* Convert forex pair "usd_twd" -> Marketstack symbol "USDTWD" */
+function forexPairToMarketstackSymbol(pair) {
   const [from, to] = pair.toUpperCase().split('_');
-  return `${from}${to}=X`;
+  return `${from}${to}`;
 }
 
 /*
- * Fetch quotes for a list of Yahoo symbols using the public endpoint.
- * Returns a map: symbol (as returned by Yahoo) -> numeric price
+ * Fetch forex rates from Marketstack API
+ * Returns a map: symbol -> exchange rate
  */
-async function fetchYahooQuotes(symbols) {
+async function fetchMarketstackForex(symbols) {
   const result = {};
   if (!symbols || symbols.length === 0) return result;
 
-  const batchSize = 50; // Yahoo handles many, but batch to be safe
-  for (let i = 0; i < symbols.length; i += batchSize) {
-    const batch = symbols.slice(i, i + batchSize);
-    const qs = encodeURIComponent(batch.join(','));
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${qs}`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'node.js' }
-    });
+  try {
+    for (const symbol of symbols) {
+      const url = `http://api.marketstack.com/v1/eod?symbols=${symbol}&access_key=${API_KEY}`;
+      const res = await fetch(url);
+      
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`Marketstack API error for ${symbol}: ${res.status} ${res.statusText} - ${text}`);
+      }
+
+      const data = await res.json();
+      
+      if (data.error) {
+        console.error(`Marketstack API returned error for ${symbol}:`, data.error);
+        throw new Error(`Marketstack API error: ${data.error.code} - ${data.error.message}`);
+      }
+
+      if (data.data && data.data.length > 0) {
+        // Use the close price from the latest data point
+        const quote = data.data[0];
+        result[symbol] = Number(quote.close) || null;
+      } else {
+        console.error(`No data returned from Marketstack for ${symbol}`);
+      }
+    }
+  } catch (err) {
+    console.error('Error fetching from Marketstack:', err);
+    throw err;
+  }
+
+  return result;
+}
+
+/*
+ * Fetch intraday stock quotes from Marketstack API
+ * Returns a map: symbol -> price
+ */
+async function fetchMarketstackQuotes(symbols) {
+  const result = {};
+  if (!symbols || symbols.length === 0) return result;
+
+  try {
+    // Marketstack allows multiple symbols separated by comma
+    const symbolList = symbols.join(',');
+    const url = `http://api.marketstack.com/v1/intraday?symbols=${symbolList}&access_key=${API_KEY}`;
+    
+    const res = await fetch(url);
+    
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`Yahoo Finance API error: ${res.status} ${res.statusText} - ${text}`);
+      throw new Error(`Marketstack API error: ${res.status} ${res.statusText} - ${text}`);
     }
+
     const data = await res.json();
-    const results = (data.quoteResponse && data.quoteResponse.result) || [];
-
-    // Map returned quotes by symbol (Yahoo's symbol field is the canonical key)
-    for (const q of results) {
-      if (!q || !q.symbol) continue;
-      // prefer regularMarketPrice but fall back to other fields
-      const price = q.regularMarketPrice ?? q.ask ?? q.bid ?? q.previousClose ?? null;
-      if (price == null) {
-        console.error(`Yahoo returned quote for ${q.symbol} but missing usable price:`, JSON.stringify(q, null, 2));
-        continue;
-      }
-      result[q.symbol.toUpperCase()] = Number(price);
+    
+    if (data.error) {
+      console.error('Marketstack API returned error:', data.error);
+      throw new Error(`Marketstack API error: ${data.error.code} - ${data.error.message}`);
     }
 
-    // For any requested symbol not returned, log and leave it missing (caller will handle)
-    const returnedSymbols = new Set(results.map(r => (r.symbol || '').toUpperCase()));
-    for (const s of batch) {
+    if (data.data && data.data.length > 0) {
+      // Map symbols to their latest price
+      for (const quote of data.data) {
+        if (quote && quote.symbol) {
+          // Use last price, fallback to close price
+          const price = quote.last ?? quote.close ?? null;
+          if (price != null) {
+            result[quote.symbol.toUpperCase()] = Number(price);
+          }
+        }
+      }
+    }
+
+    // Log any requested symbols that weren't returned
+    const returnedSymbols = new Set((data.data || []).map(d => (d.symbol || '').toUpperCase()));
+    for (const s of symbols) {
       if (!returnedSymbols.has(s.toUpperCase())) {
-        console.error(`Yahoo did not return data for requested symbol: ${s}`);
+        console.warn(`Marketstack did not return data for requested symbol: ${s}`);
       }
     }
+  } catch (err) {
+    console.error('Error fetching quotes from Marketstack:', err);
+    throw err;
   }
 
   return result;
@@ -93,57 +146,56 @@ async function saveToCSV() {
   const date = DateTime.now().toISO();
 
   const forexPairs = getForexPairs(); // ['usd_twd', ...]
-  const tickers = getTickers(); // ['AAPL', 'TSLA', ...]
+  const tickers = getTickers(); // ['AAPL', 'TSM', ...]
 
-  // Build Yahoo symbols for forex
-  const forexYahooSymbols = forexPairs.map(forexPairToYahooSymbol);
+  console.log('Fetching forex pairs:', forexPairs);
+  console.log('Fetching tickers:', tickers);
 
-  // Combine both lists and fetch in batches to reduce network calls
-  // Ensure we keep original ordering for CSV output
-  const allSymbols = [...new Set([...forexYahooSymbols.map(s => s.toUpperCase()), ...tickers.map(t => t.toUpperCase())])];
-
-  let quotesMap;
+  // Fetch forex rates
+  const forexSymbols = forexPairs.map(forexPairToMarketstackSymbol);
+  let forexRates;
   try {
-    quotesMap = await fetchYahooQuotes(allSymbols);
+    const forexMap = await fetchMarketstackForex(forexSymbols);
+    forexRates = forexPairs.map(pair => {
+      const sym = forexPairToMarketstackSymbol(pair);
+      const val = forexMap[sym];
+      if (val === undefined || val === null) {
+        throw new Error(`Missing forex rate for ${pair} (symbol ${sym})`);
+      }
+      return val;
+    });
   } catch (err) {
-    console.error('Failed to fetch quotes from Yahoo Finance:', err);
+    console.error('Failed to fetch forex rates from Marketstack:', err);
     throw err;
   }
 
-  // Map forex rates back to forexPairs order
-  const forexRates = forexPairs.map(pair => {
-    const sym = forexPairToYahooSymbol(pair).toUpperCase();
-    const val = quotesMap[sym];
-    if (val === undefined) {
-      throw new Error(`Missing forex rate for ${pair} (requested symbol ${sym})`);
-    }
-    return val;
-  });
-
-  // Map tickers to prices preserving order
-  const tickerPrices = tickers.map(t => {
-    // Yahoo returns the symbol field often as given, but uppercase is safe
-    const lookup = t.toUpperCase();
-    const price = quotesMap[lookup];
-    if (price === undefined) {
-      // Some tickers (e.g. BRK.B) might be returned in a different ticker format by Yahoo (BRK-B).
-      // Attempt to find a matching returned symbol (loose match)
-      const alt = Object.keys(quotesMap).find(k => k.toUpperCase() === lookup || k.replace('-', '.').toUpperCase() === lookup || k.replace('.', '-').toUpperCase() === lookup);
-      if (alt) return quotesMap[alt];
-      throw new Error(`Missing price for ticker ${t} (looked up ${lookup})`);
-    }
-    return price;
-  });
+  // Fetch ticker prices
+  let tickerPrices;
+  try {
+    const quotesMap = await fetchMarketstackQuotes(tickers);
+    tickerPrices = tickers.map(t => {
+      const lookup = t.toUpperCase();
+      const price = quotesMap[lookup];
+      if (price === undefined || price === null) {
+        throw new Error(`Missing price for ticker ${t}`);
+      }
+      return price;
+    });
+  } catch (err) {
+    console.error('Failed to fetch ticker prices from Marketstack:', err);
+    throw err;
+  }
 
   // Build CSV: datetime, <forex pairs>, <tickers>
   const header = ['datetime', ...forexPairs, ...tickers].join(',') + '\n';
   const row = [date, ...forexRates, ...tickerPrices].join(',') + '\n';
 
   fs.writeFileSync('financial_data.csv', header + row, { encoding: 'utf8' });
-  console.log('Data successfully written (overwritten) to financial_data.csv in UTF-8 encoding.');
+  console.log('Data successfully written to financial_data.csv');
+  console.log(`Timestamp: ${date}`);
 }
 
 saveToCSV().catch(err => {
-  console.error(err);
+  console.error('Fatal error:', err);
   process.exit(1);
 });
