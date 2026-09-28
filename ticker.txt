@@ -4,3 +4,6 @@ bac
 msft
 nvda
 tsm
+iwy
+moat
+vnq
