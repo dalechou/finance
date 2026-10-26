@@ -2,29 +2,24 @@ name: Scrape Financial Data
 
 on:
   schedule:
-    # Run at 9:30 AM UTC (NYSE opens) - weekdays only
     - cron: '30 9 * * 1-5'
-    # Run at 4:00 PM UTC (NYSE closes) - weekdays only
     - cron: '0 16 * * 1-5'
   workflow_dispatch:
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}  # Use the PAT for authentication
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-
-      - name: Install dependencies
-        run: npm install node-fetch luxon
+          node-version: '24'
 
       - name: Run scraper
         env:
